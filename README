@@ -13,10 +13,10 @@ Warpkernel Library Usage:
 1. scan
 Prototype:
   void scan(uint & nz_, uint & nrows_, ValueType * A, IndexType * rows, IndexType *colinds, [IndexType threshold])
-This scans the matrix A and analyzes it's structure to generate the propper mappgins for the warpkernels. For warpkernel::structure (K1) and warpkernel::structure2 (K2) have similar but separate scan calls that convert a matrix into the WPK1/2 formats repsectively.
+This scans the matrix A and analyzes its structure to generate the propper mappings for the warpkernels. For warpkernel::structure (K1) and warpkernel::structure2 (K2) have similar but separate scan calls that convert a matrix into the WPK1/2 formats repsectively.
 
 2. Process
-Performs the reoordering of values and columns into the corresponding WPK format. warpkernel::engine instatiation will call this by default.
+Performs the re-ordering of values and columns into the corresponding WPK format. warpkernel::engine instatiation will call this by default.
 
 3. Run
 warpkernel::engine::run will perform the SPMV multiplication on arrays x and y. On the other hand warpkernel::engine::run_x will perform the multiplication with the entries of X reordered (Kr). This means that for each entry of the reordered x array x', the result from run_x yields the proper corresponding entry in the original solution array y, y'. run computes A*x=y and run_x computes A*x'=y'.
