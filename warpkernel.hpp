@@ -603,7 +603,9 @@ namespace warpkernel
 
       // find global minimum and maximum
       // boost::accumulators::accumulator_set<uint, boost::accumulators::stats<boost::accumulators::tag::min, boost::accumulators::tag::max> > acc;
-
+      min_nz = nrows;
+      max_nz = 0;
+      
       // Use sorted row-sizes to calculate A_w, nnz_w, etc.
       for (int w = 0; w < nwarps; w++) {
 	for (int r = WARP_SIZE * w; r < nznrows && r < WARP_SIZE*(w+1); r++) {
@@ -612,8 +614,11 @@ namespace warpkernel
 	  if (rowsize < nnz_imin[w]) nnz_imin[w] = rowsize; // min
 	  if (rowsize > nnz_imax[w]) nnz_imax[w] = rowsize; // max
 	  rows_w[w] += 1;
-	  // if (rowsize > 0)
-	    //	    acc(rowsize);
+	  if (rowsize > 0) {
+	    min_nz = rowsize < min_nz ? rowsize : min_nz;
+	    max_nz = rowsize > max_nz ? rowsize : max_nz;
+	  }
+	    
 	}
 
 	assert(nnz_imax[w] < nrows);
