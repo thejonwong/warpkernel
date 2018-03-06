@@ -27,6 +27,7 @@ struct rand_float {
   }
 };
 
+using namespace warpkernel;
 
 int main(int argc, char *argv[]) {
 
@@ -37,6 +38,8 @@ int main(int argc, char *argv[]) {
   cusp::coo_matrix<IndexType, ValueType, CPUSpace> B;
   cusp::io::read_matrix_market_file(B, matrixfilename.c_str());
 
+  printf("Finished Loading %s\n", matrixfilename.c_str());
+  
   cusp::csr_matrix<IndexType, ValueType, CPUSpace> A = B;
 
   uint N = A.num_cols;
@@ -54,215 +57,162 @@ int main(int argc, char *argv[]) {
   std::string datapath = "./data/" + matrixname + "_results_wpk1.txt";
   std::cout << "Starting data file = " << datapath << std::endl;
   std::ofstream datafile(datapath.c_str());
-  //  warpkernel::startDatafile(datafile, nz,N,ntests);
 
   cusp::array1d<ValueType, CPUSpace> x(N,0);
   thrust::generate(x.begin(),x.end(), rand_float());
 
-
+  // solution
   cusp::array1d<ValueType, CPUSpace> y(N);
-
-  // setup multiple run mean accumulators
-  // find global minimum and maximum
-
-  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::min>  > wk1all;
-  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::min>  > wk1;
-  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::min>  > wk1no;
-  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::min>  > wk1rex;
-  // int wk1allblock, wk1block, wk1noblock, wk1rexblock;
-
-  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::min>  > wk2all;
-  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::min>  > wk2;
-  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::min>  > wk2no;
-  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::min>  > wk2rex;
-  // int wk2allblock, wk2block, wk2noblock, wk2rexblock;
-  // int wk2allth, wk2th, wk2noth, wk2rexth;
-
-  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::min> > mgpustats;
 
 
   bool lastiter = true;
-    // cusp multiplication
-    {
+  // cusp multiplication
+  {
+    profiler csr;
+    cusp::csr_matrix<IndexType, ValueType, DeviceSpace> A1 = A;
+    cusp::array1d<ValueType, DeviceSpace> dx = x;
+    cusp::array1d<ValueType, DeviceSpace> dy = y;
 
-      // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::mean>  > statstime;
-      cusp::csr_matrix<IndexType, ValueType, DeviceSpace> A1 = A;
-      cusp::array1d<ValueType, DeviceSpace> dx = x;
-      cusp::array1d<ValueType, DeviceSpace> dy = y;
-
-      for (int t = 0; t < ntests; t++) {
-	timer cusptimer;
-	cusp::multiply(A1,dx,dy);
-	ValueType measuredtime = cusptimer.seconds_elapsed();
-	//	statstime(measuredtime);		
-      }		
-      y = dy;
+    for (int t = 0; t < ntests; t++) {
+      timer cusptimer;
+      cusp::multiply(A1,dx,dy);
+      ValueType measuredtime = cusptimer.seconds_elapsed();
+      csr.add(measuredtime);
+    }		
+    y = dy;
 	
-      if (lastiter) {
-	// std::cout << "cusp gpu time " 
-	// 	  << std::scientific << boost::accumulators::mean(statstime) << std::endl;
-	// warpkernel::addData(datafile, "cusp-csr", boost::accumulators::mean(statstime), -1, -1, -1, -1);
-      }
+    if (lastiter) {
+      printf("CUSP CSR avg time (%d runs) = %3.3e [s]\n", csr.count, csr.avg());
+    }
+  }
+
+  // cusp-hyb
+  {
+    profiler hyb;
+    cusp::hyb_matrix<IndexType, ValueType, DeviceSpace> A1 = A;
+    cusp::array1d<ValueType, DeviceSpace> dx = x;
+    cusp::array1d<ValueType, DeviceSpace> dy = y;
+
+    for (int t = 0; t < ntests; t++) {
+      timer cusptimer;
+      cusp::multiply(A1,dx,dy);
+      ValueType measuredtime = cusptimer.seconds_elapsed();
+      hyb.add(measuredtime);
     }
 
-    // cusp-hyb
-    {
-      // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::mean>  > statstime;
+    y = dy;
 
-      cusp::hyb_matrix<IndexType, ValueType, DeviceSpace> A1 = A;
-      cusp::array1d<ValueType, DeviceSpace> dx = x;
-      cusp::array1d<ValueType, DeviceSpace> dy = y;
-
-      for (int t = 0; t < ntests; t++) {
-	timer cusptimer;
-	cusp::multiply(A1,dx,dy);
-	ValueType measuredtime = cusptimer.seconds_elapsed();
-	//	statstime(measuredtime);
-      }
-
-      y = dy;
-
-      if (lastiter) {
-	// std::cout << "cusp-hyb gpu time " 
-	// 	  << std::scientific << boost::accumulators::mean(statstime) << std::endl;
-	// warpkernel::addData(datafile, "cusp-hyb", boost::accumulators::mean(statstime), -1, -1, -1, -1);
-      }
+    if (lastiter) {
+      printf("CUSP HYB avg time (%d runs) = %3.3e [s]\n", hyb.count, hyb.avg());
     }
+  }
 
 
-    // warp kernel tests
-    {
-      cusp::array1d<ValueType, DeviceSpace> dx = x;
-      warpkernel::structure kernel1;
-      kernel1.scan(nz, N, A);
+  // warp kernel tests
+  {
+    cusp::array1d<ValueType, DeviceSpace> dx = x;
+    warpkernel::structure kernel1;
+    kernel1.scan(nz, N, A);
 
-      cusp::array1d<IndexType, CPUSpace> reorder_cols = A.column_indices;
-      kernel1.reorder_columns_coalesced(reorder_cols);
+    cusp::array1d<IndexType, CPUSpace> reorder_cols = A.column_indices;
+    kernel1.reorder_columns_coalesced(reorder_cols);
 
-      cusp::array1d<ValueType, DeviceSpace> dreordered_x;
-      kernel1.reorder_x(x, dreordered_x);
+    cusp::array1d<ValueType, DeviceSpace> dreordered_x;
+    kernel1.reorder_x(x, dreordered_x);
 
-      warpkernel::engine<ValueType, IndexType> eng(kernel1,
-						   &(A.values[0]),
-						   &(A.column_indices[0]));
+    warpkernel::engine<ValueType, IndexType> eng(kernel1,
+						 &(A.values[0]),
+						 &(A.column_indices[0]));
    
-      std::cout << "warp kernel 1" << std::endl;
+    std::cout << "warp kernel 1" << std::endl;
 
-      for (int warps_per_block = 1; warps_per_block <= 8; warps_per_block ++) {
-	std::cout << std::endl;
-	uint nblocks = (kernel1.nwarps + warps_per_block-1)/warps_per_block;
-	uint blocksize = warps_per_block * WARP_SIZE;
+    for (int warps_per_block = 1; warps_per_block <= 8; warps_per_block ++) {
+      std::cout << std::endl;
+      uint nblocks = (kernel1.nwarps + warps_per_block-1)/warps_per_block;
+      uint blocksize = warps_per_block * WARP_SIZE;
     
-	// normal kernel
-	{
-	  cusp::array1d<ValueType, DeviceSpace> dy(N,0);  
+      // normal kernel
+      {
+	profiler norm;
+	cusp::array1d<ValueType, DeviceSpace> dy(N,0);  
 
-	  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::mean>  > statstime;
-	  for (int t = 0; t < ntests; t++) {
-	    ValueType measuretime = eng.run<true>(nblocks, blocksize,
-						  thrust::raw_pointer_cast(&dx[0]),
-						  thrust::raw_pointer_cast(&dy[0]));
-	    cudaUnbindTexture(x_tex);
-	    //	    statstime(measuretime);
-	  }
-	  cusp::array1d<ValueType, CPUSpace> ycheck = dy;
-	  if (eng.verify(y,ycheck) && lastiter)
-	    {
-	      printf("Passed\n");
-	      // std::cout << "warpkernel (" << nblocks << "," << blocksize <<") time = " 
-	      // 		<< std::scientific << boost::accumulators::mean(statstime) << std::endl;
-	      // warpkernel::addData(datafile, "warpkernel", boost::accumulators::mean(statstime), kernel1, blocksize);
-	      
-	      // wk1all(boost::accumulators::mean(statstime));
-	      // wk1(boost::accumulators::mean(statstime));
-	      // if (boost::accumulators::min(wk1all) == boost::accumulators::mean(statstime)) wk1allblock = blocksize;
-	      // if (boost::accumulators::min(wk1) == boost::accumulators::mean(statstime)) wk1block = blocksize;
-	    } else exit(1);
-
-	}
-	cusp::array1d<IndexType, DeviceSpace> restore_col = eng.device_colinds;
-
-	// reordered kernel without rowmap
-	{
-	  cusp::array1d<ValueType, DeviceSpace> dy(N,0);  
-	  eng.device_colinds = reorder_cols;
-
-	  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::mean>  > statstime;
-	  for (int t = 0; t < ntests; t++) {
-	    ValueType measuretime = eng.run_x<true>(nblocks, blocksize,
-						    thrust::raw_pointer_cast(&dreordered_x[0]),
-						    thrust::raw_pointer_cast(&dy[0]));
-	    cudaUnbindTexture(x_tex);
-	    //	    statstime(measuretime);
-	  }
-	  cusp::array1d<ValueType, CPUSpace> ycheck = dy;
-	  if (eng.verify_x(y,ycheck) && lastiter) {
-	    	      printf("Passed\n");
-	    // std::cout << "warpkernel reorder w/o rowmap (" << nblocks << "," << blocksize <<") time = " 
-	    // 	      << std::scientific << boost::accumulators::mean(statstime) << std::endl;
-	    // warpkernel::addData(datafile, "warpkernel_no", boost::accumulators::mean(statstime), kernel1, blocksize);
-
-	    // wk1all(boost::accumulators::mean(statstime));
-	    // wk1no(boost::accumulators::mean(statstime));
-	    // if (boost::accumulators::min(wk1all) == boost::accumulators::mean(statstime)) wk1allblock = blocksize;
-	    // if (boost::accumulators::min(wk1no) == boost::accumulators::mean(statstime)) wk1noblock = blocksize;
-
-	  } else
-	    printf("Failed\n");
-	  eng.device_colinds = restore_col;
-
-	}
-	// Normal kernel to counter act cache effect
-	{
-	  cusp::array1d<ValueType, DeviceSpace> dy(N,0);  
+	for (int t = 0; t < ntests; t++) {
 	  ValueType measuretime = eng.run<true>(nblocks, blocksize,
 						thrust::raw_pointer_cast(&dx[0]),
 						thrust::raw_pointer_cast(&dy[0]));
-	  cudaDeviceSynchronize();
-	  cusp::array1d<ValueType, CPUSpace> ycheck = dy;
-	} 
-
-
-	// reordered kernel with rowmap
-	{
-	  cusp::array1d<ValueType, DeviceSpace> dy(N,0);  
-	  eng.device_colinds = reorder_cols;
-
-	  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::mean>  > statstime;
-	  for (int t = 0; t < ntests; t++) {
-	    ValueType measuretime = eng.run<true>(nblocks, blocksize,
-	    					  thrust::raw_pointer_cast(&dreordered_x[0]),
-	    					  thrust::raw_pointer_cast(&dy[0]));
-	    cudaDeviceSynchronize();	    
-	    cudaUnbindTexture(x_tex);
-	    //	    statstime(measuretime);
-	  }
-	  cusp::array1d<ValueType, CPUSpace> ycheck = dy;
-	  if (eng.verify(y,ycheck) && lastiter) {
-	    printf("passed reorder\n");
-	    // std::cout << "warpkernel reorder (" << nblocks << "," << blocksize <<") time = " 
-	    // 	      << std::scientific << boost::accumulators::mean(statstime) << std::endl;
-	    // warpkernel::addData(datafile, "warpkernel_rex", boost::accumulators::mean(statstime), kernel1, blocksize);
-
-	    // wk1all(boost::accumulators::mean(statstime));
-	    // wk1rex(boost::accumulators::mean(statstime));
-	    // if (boost::accumulators::min(wk1all) == boost::accumulators::mean(statstime)) wk1allblock = blocksize;
-	    // if (boost::accumulators::min(wk1rex) == boost::accumulators::mean(statstime)) wk1rexblock = blocksize;
-
-	  } else
-	    printf("failed\n");
-	  eng.device_colinds = restore_col;
-
-	}    
+	  norm.add(measuretime);
+	  cudaUnbindTexture(x_tex);
+	}
+	cusp::array1d<ValueType, CPUSpace> ycheck = dy;
+	if (eng.verify(y,ycheck) && lastiter)
+	  {
+	    printf("WPK1 avg time (%d runs) = %e (warps/block = %d)\n",
+		   norm.count, norm.avg(), warps_per_block);
+	  } else exit(1);
 
       }
+      cusp::array1d<IndexType, DeviceSpace> restore_col = eng.device_colinds;
 
+      // reordered kernel without rowmap
+      {
+	profiler reordered;
+	cusp::array1d<ValueType, DeviceSpace> dy(N,0);  
+	eng.device_colinds = reorder_cols;
+
+	for (int t = 0; t < ntests; t++) {
+	  ValueType measuretime = eng.run_x<true>(nblocks, blocksize,
+						  thrust::raw_pointer_cast(&dreordered_x[0]),
+						  thrust::raw_pointer_cast(&dy[0]));
+	  reordered.add(measuretime);
+	  cudaUnbindTexture(x_tex);
+	}
+	cusp::array1d<ValueType, CPUSpace> ycheck = dy;
+	if (eng.verify_x(y,ycheck) && lastiter) {
+	  printf("WPK1_r avg time (%d runs) = %e (warps/block = %d)\n",\
+		 reordered.count, reordered.avg(), warps_per_block); 
+
+	} else
+	  printf("Failed\n");
+
+	// reset columns
+	eng.device_colinds = restore_col;
+
+      }
+      // Normal kernel to counter act cache effect
+      {
+	cusp::array1d<ValueType, DeviceSpace> dy(N,0);  
+	ValueType measuretime = eng.run<true>(nblocks, blocksize,
+					      thrust::raw_pointer_cast(&dx[0]),
+					      thrust::raw_pointer_cast(&dy[0]));
+	
+	cusp::array1d<ValueType, CPUSpace> ycheck = dy;
+      } 
+
+
+      // reordered kernel with rowmap
+      {
+	profiler rowmap;
+	cusp::array1d<ValueType, DeviceSpace> dy(N,0);  
+	eng.device_colinds = reorder_cols;
+	
+	for (int t = 0; t < ntests; t++) {
+	  ValueType measuretime = eng.run<true>(nblocks, blocksize,
+						thrust::raw_pointer_cast(&dreordered_x[0]),
+						thrust::raw_pointer_cast(&dy[0]));
+	  rowmap.add(measuretime);
+	  cudaUnbindTexture(x_tex);
+	}
+	cusp::array1d<ValueType, CPUSpace> ycheck = dy;
+	if (eng.verify(y,ycheck) && lastiter) {
+
+	  printf("WPK1_rx avg time (%d runs) = %e (warps/block = %d)\n",
+		 rowmap.count, rowmap.avg(), warps_per_block);
+
+	} else
+	  printf("failed\n");
+	eng.device_colinds = restore_col;
+
+      }    
     }
-
-
-    // warpkernel::addData(datafile, "wpk1all", boost::accumulators::min(wk1all), -1, -1, -1, wk1allblock);
-    // warpkernel::addData(datafile, "wpk1", boost::accumulators::min(wk1), -1, -1, -1, wk1block);
-    // warpkernel::addData(datafile, "wpk1no", boost::accumulators::min(wk1no), -1, -1, -1, wk1noblock);
-    // warpkernel::addData(datafile, "wpk1rex", boost::accumulators::min(wk1rex), -1, -1, -1, wk1rexblock);
-
+  }
 }

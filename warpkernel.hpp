@@ -1,5 +1,5 @@
 /*
-  Copyright (C) 2012,2018 Jonathan Wong
+  Copyright (C) 2012 - 2018 Jonathan Wong
 
   Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -14,18 +14,6 @@
 
 #define NDEBUG 
 
-// Serialization Includes
-// #include <boost/archive/text_iarchive.hpp>
-// #include <boost/archive/text_oarchive.hpp>
-// #include <boost/serialization/vector.hpp>
-// #include <boost/serialization/base_object.hpp>
-
-// // stats
-// #include <boost/accumulators/accumulators.hpp>
-// #include <boost/accumulators/statistics/stats.hpp>
-// #include <boost/accumulators/statistics/min.hpp>
-// #include <boost/accumulators/statistics/max.hpp>
-
 // General
 #include <fstream>
 #include <algorithm>
@@ -34,8 +22,6 @@
 #include <cusp/csr_matrix.h>
 #include <cusp/system/cuda/arch.h>
 #include <performance/timer.h>
-
-// #define WARP_SIZE 32
 
 // Texture cache fetching
 
@@ -319,26 +305,6 @@ namespace warpkernel
       storereorder(reorder_rows_);
     }
 
-    // void save(std::ofstream & ofs) {
-    //   boost::archive::text_oarchive oa(ofs);
-    //   oa << *this;
-    // }
-
-    // void save(char filename[]) {
-    //   std::ofstream ofs(filename);
-    //   save(ofs);
-    // }
-
-    // void load(std::ifstream & ifs) {
-    //   boost::archive::text_iarchive ia(ifs);
-    //   ia >> *this;
-    // }
-
-    // void load(char filename[]) {
-    //   std::ifstream ifs(filename);
-    //   load(ifs);
-    // }
-
     template <typename ValueType, typename IndexType>
     void scan(uint & nz_, uint & nrows_, 
 	      ValueType * A, IndexType * rows, IndexType *colinds) {
@@ -585,18 +551,6 @@ namespace warpkernel
 
   class structure2 : public structure
   {
-    //  friend class boost::serialization::access;
-  // private:
-  //   template<class Archive>
-  //   void serialize(Archive &ar, const unsigned int version)
-  //   {
-  //     ar & boost::serialization::base_object<structure>(*this);
-  //     ar & nmax_per_thread;
-  //     ar & row_offset_warp;
-  //     ar & threads_per_row;
-  //     ar & min_nz;
-  //     ar & max_nz;
-  //   }
   public:
     structure2() {}
     structure2(const uint &nrows_, const uint &nz_, const uint & alloc_, const uint & threshold_):
@@ -619,27 +573,6 @@ namespace warpkernel
       ((structure *)this)->store(row_map_,reorder_rows_);
       store_param(row_offsets_,tpr_);
     }
-
-    // // overload serialization functions to serialize correctly
-    // void save(std::ofstream & ofs) {
-    //   boost::archive::text_oarchive oa(ofs);
-    //   oa << *this;
-    // }
-
-    // void save(char * filename) {
-    //   std::ofstream ofs(filename);
-    //   save(ofs);
-    // }
-
-    // void load(std::ifstream & ifs) {
-    //   boost::archive::text_iarchive ia(ifs);
-    //   ia >> *this;
-    // }
-
-    // void load(char * filename) {
-    //   std::ifstream ifs(filename);
-    //   load(ifs);
-    // }
 
     // overload struct1 scan
     template <typename ValueType, typename IndexType>
@@ -1021,50 +954,27 @@ namespace warpkernel
 
   // helper functions
 
-  // void startDatafile(std::ofstream & ofs, uint nz, uint nrows, uint ntests) {
+  class profiler {
+  public:
+    double sum;
+    int count;
 
-  //   ofs << "nz\t" << nz << std::endl;
-  //   ofs << "nrows\t" << nrows << std::endl;
-  //   ofs << "bytes\t" << nz * 20 << std::endl;
-  //   ofs << "ntests\t" << ntests << std::endl; // compatibility with past results files
-  //   ofs << std::endl;
-  //   ofs << std::endl;
-  //   ofs << "Kernel name\t"
-  //       << "padded_nz\t"
-  //       << "time [s]\t"
-  //       << "nwarps\t" 
-  //       << "nblocks\t"
-  //       << "blocksize" << std::endl;
+    profiler() :
+      sum(0.e0),
+      count(0)
+    {}
 
-  // }
+    void add(double secs) {
+      sum += secs;
+      count++;
+    }
 
-  // void addData(std::ofstream &ofs, char * kernelname, float measuredtime, int padded_nz,
-  // 	     int nwarps, int nblocks, int blocksize)
-  // {
-  //   ofs << kernelname << "\t";
-  //   ofs << padded_nz << "\t";
-  //   ofs << std::scientific << measuredtime << "\t";
-  //   ofs << nwarps << "\t";
-  //   ofs << nblocks  << "\t";
-  //   ofs << blocksize << std::endl;
-  // }
+    double avg() {
+      return sum/(1.*count);
+    }
 
-
-
-  // void addData(std::ofstream &ofs, char * kernelname, float measuredtime, 
-  // 		      structure &s, uint blocksize) 
-  // {
-  //   addData(ofs, 
-  // 	  kernelname, 
-  // 	  measuredtime, 
-  // 	  s.allocate_nz, 
-  // 	  s.nwarps, 
-  // 	  (s.nwarps + (blocksize/WARP_SIZE)-1)/(blocksize/WARP_SIZE),
-  // 	  blocksize);
-  // }
+  };
 
 }
-//BOOST_CLASS_VERSION(warpkernel::structure,1)
-//BOOST_CLASS_VERSION(warpkernel::structure2,1)
 
 #endif
