@@ -38,14 +38,18 @@ using namespace warpkernel;
 
 int main(int argc, char *argv[]) {
 
+  // Define stats collection
+  stats stats_all, stats_n, stats_r, stats_rx;
+  stats stats_csr, stats_hyb;
+  
   std::string matrixfilename = argv[1];
   int ntests = 1;
-  if (argc == 3) ntests = atoi(argv[2]);
+  if (argc >= 3) ntests = atoi(argv[2]);
 
   int minthreshold = 1;
   int maxthreshold = 1;
   if (argc >= 4) minthreshold = atoi(argv[3]);
-  if (argc == 5) maxthreshold = atoi(argv[4]);
+  if (argc >= 5) maxthreshold = atoi(argv[4]);
 
   cusp::coo_matrix<IndexType, ValueType, CPUSpace> B;
   cusp::io::read_matrix_market_file(B, matrixfilename.c_str());
@@ -100,12 +104,12 @@ int main(int argc, char *argv[]) {
 	
       if (lastiter) {
 	printf("CUSP CSR avg time (%d runs) = %3.3e [s]\n", csr.count, csr.avg());
+	stats_csr.add(csr.avg(),"CSR");
       }
     }
 
     // cusp-hyb
     {
-      // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::mean>  > statstime;
 
       cusp::hyb_matrix<IndexType, ValueType, DeviceSpace> A1 = A;
       cusp::array1d<ValueType, DeviceSpace> dx = x;
@@ -123,10 +127,12 @@ int main(int argc, char *argv[]) {
 
       if (lastiter) {
 	printf("CUSP HYB avg time (%d runs) = %3.3e [s]\n", hyb.count, hyb.avg());
+	stats_hyb.add(hyb.avg(),"HYB");
       }
     }
 
-
+    int inc; // holds min_max increment
+    
     // test warpkernel2
     {
       cusp::array1d<ValueType, DeviceSpace> dx = x;
@@ -146,7 +152,9 @@ int main(int argc, char *argv[]) {
 
       printf("min_nz = %d, max_nz %d\n", min_nz, max_nz);
       
-      for (int threshold = min_nz; threshold <= max_nz; threshold ++) {
+      // Modified to only test out 5 values in the min-max range just to speed things up
+      inc = (max_nz-min_nz)*0.1 > 0 ? (max_nz-min_nz)*0.1 : 1;
+      for (int threshold = min_nz; threshold <= max_nz; threshold+=inc) {
 	std::cout << std::endl;
 	kernel2.scan(nz, N, A, threshold); // use maximum threshold
 
@@ -188,6 +196,12 @@ int main(int argc, char *argv[]) {
 	    if (eng.verify(y,ycheck)) {
 	      printf("WPK2 avg time (%d runs) = %e (warps/block = %d, threshold = %d)\n",
 		     norm.count, norm.avg(), warps_per_block, threshold);
+
+	      std::ostringstream fmt_string;
+	      fmt_string << "warps/block = " << warps_per_block << " th = " << threshold;
+	      stats_all.add(norm.avg(), fmt_string.str());
+	      stats_n.add(norm.avg(), fmt_string.str());
+
 	    }
 	    else {
 	      printf("Failed\n");
@@ -211,6 +225,14 @@ int main(int argc, char *argv[]) {
 	    if (eng.verify(y,ycheck) && lastiter) {
 	      printf("WPK2_rx avg time (%d runs) = %e (warps/block = %d, threshold = %d)\n",
 		     reordered.count, reordered.avg(), warps_per_block, threshold);
+
+
+	      std::ostringstream fmt_string;
+	      fmt_string << "warps/block = " << warps_per_block << " th = " << threshold;
+
+	      stats_all.add(reordered.avg(), fmt_string.str());
+	      stats_rx.add(reordered.avg(), fmt_string.str());
+
 
 	    } //else exit(1);
 	    eng.device_colinds = restore_col;
@@ -247,6 +269,12 @@ int main(int argc, char *argv[]) {
 	      printf("WPK2_r avg time (%d runs) = %e (warps/block = %d, threshold = %d)\n",
 		     timer.count, timer.avg(), warps_per_block, threshold);
 
+	      std::ostringstream fmt_string;
+	      fmt_string << "warps/block = " << warps_per_block << " th = " << threshold;
+
+	      stats_all.add(timer.avg(), fmt_string.str());
+	      stats_r.add(timer.avg(), fmt_string.str());
+
 	    }// else exit(1);
 	    eng.device_colinds = restore_col;
 
@@ -259,18 +287,18 @@ int main(int argc, char *argv[]) {
     }
 
 
-    // std::stringstream wpk2allname;
-    // wpk2allname << "wpk2all_" << wk2allth;
-    // warpkernel::addData(datafile,  (char *) (wpk2allname.str()).c_str(), boost::accumulators::min(wk2all), -1, -1, -1, wk2allblock);
-    // std::stringstream wpk2name;
-    // wpk2name << "wpk2_" << wk2th;
-    // warpkernel::addData(datafile,  (char *)(wpk2name.str()).c_str(), boost::accumulators::min(wk2), -1, -1, -1, wk2block);
-    // std::stringstream wpk2noname;
-    // wpk2noname << "wpk2no_" << wk2noth;
-    // warpkernel::addData(datafile,  (char *)(wpk2noname.str()).c_str(), boost::accumulators::min(wk2no), -1, -1, -1, wk2noblock);
-    // std::stringstream wpk2rexname;
-    // wpk2rexname << "wpk2rex_" << wk2rexth;
-    // warpkernel::addData(datafile,  (char *)(wpk2rexname.str()).c_str(), boost::accumulators::min(wk2rex), -1, -1, -1, wk2rexblock);
+  printf("\n");
+  
+  // Summary
+  printf("CUSP CSR = %e [s]\n", stats_csr.Min());
+  printf("CUSP HYB = %e [s]\n", stats_hyb.Min());
 
+  double fastest = min(stats_csr.Min(), stats_hyb.Min());
+  
+  printf("Fasted WPK2 (all) = %e [s], %2.2fx faster (%s)\n", stats_all.Min(), fastest/stats_all.Min(), stats_all.Min_str().c_str());
+  printf("Fasted WPK2       = %e [s], %2.2fx faster (%s)\n", stats_n.Min() , fastest/stats_n.Min(), stats_n.Min_str().c_str());
+  printf("Fasted WPK2_r     = %e [s], %2.2fx faster (%s)\n", stats_r.Min() , fastest/stats_r.Min(), stats_r.Min_str().c_str());
+  printf("Fasted WPK2_rx    = %e [s], %2.2fx faster (%s)\n", stats_rx.Min(), fastest/stats_rx.Min(), stats_rx.Min_str().c_str());
+  printf("Test increment = %d\n", inc);
 
 }

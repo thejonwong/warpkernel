@@ -986,22 +986,38 @@ namespace warpkernel
     stats() : min_(std::numeric_limits<double>::max()), max_(0.)
     {}
 
-    void add(double val) {
-      min_ = min(val,min_);
-      max_ = max(val,max_);
+    void add(double val, std::string ident="") {
+      if (val < min_) {
+	min_ = val;
+	min_str_ = ident;
+      }
+      if (val > max_) {
+	max_ = val;
+	max_str_ = ident;
+      }
     }
 
     double Min() {
       return min_;
     }
 
+    std::string Min_str() {
+      return min_str_;
+    }
+
     double Max() {
       return max_;
+    }
+
+    std::string Max_str() {
+      return max_str_;
     }
     
   protected:
     double min_;
     double max_;
+    std::string min_str_;
+    std::string max_str_;
 	
   };
 
