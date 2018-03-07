@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <sstream>
 #include <assert.h>
+
 // Warpkernel
 #include "warpkernel.hpp"
 
@@ -31,6 +32,10 @@ using namespace warpkernel;
 
 int main(int argc, char *argv[]) {
 
+  // Define stats collection
+  stats stats_all, stats_n, stats_r, stats_rx;
+  stats stats_csr, stats_hyb;
+  
   std::string matrixfilename = argv[1];
   int ntests = 1;
   if (argc == 3) ntests = atoi(argv[2]);
@@ -83,6 +88,7 @@ int main(int argc, char *argv[]) {
 	
     if (lastiter) {
       printf("CUSP CSR avg time (%d runs) = %3.3e [s]\n", csr.count, csr.avg());
+      stats_csr.add(csr.avg());
     }
   }
 
@@ -104,9 +110,9 @@ int main(int argc, char *argv[]) {
 
     if (lastiter) {
       printf("CUSP HYB avg time (%d runs) = %3.3e [s]\n", hyb.count, hyb.avg());
+      stats_hyb.add(hyb.avg());
     }
   }
-
 
   // warp kernel tests
   {
@@ -126,7 +132,9 @@ int main(int argc, char *argv[]) {
    
     std::cout << "warp kernel 1" << std::endl;
 
-    for (int warps_per_block = 1; warps_per_block <= 8; warps_per_block ++) {
+
+    
+    for (int warps_per_block = 1; warps_per_block <= 16; warps_per_block ++) {
       std::cout << std::endl;
       uint nblocks = (kernel1.nwarps + warps_per_block-1)/warps_per_block;
       uint blocksize = warps_per_block * WARP_SIZE;
@@ -148,6 +156,10 @@ int main(int argc, char *argv[]) {
 	  {
 	    printf("WPK1 avg time (%d runs) = %e (warps/block = %d)\n",
 		   norm.count, norm.avg(), warps_per_block);
+
+	    stats_all.add(norm.avg());
+	    stats_n.add(norm.avg());
+	    
 	  } else exit(1);
 
       }
@@ -170,6 +182,8 @@ int main(int argc, char *argv[]) {
 	if (eng.verify_x(y,ycheck) && lastiter) {
 	  printf("WPK1_r avg time (%d runs) = %e (warps/block = %d)\n",\
 		 reordered.count, reordered.avg(), warps_per_block); 
+	  stats_all.add(reordered.avg());
+	  stats_r.add(reordered.avg());
 
 	} else
 	  printf("Failed\n");
@@ -207,6 +221,9 @@ int main(int argc, char *argv[]) {
 
 	  printf("WPK1_rx avg time (%d runs) = %e (warps/block = %d)\n",
 		 rowmap.count, rowmap.avg(), warps_per_block);
+	  stats_all.add(rowmap.avg());
+	  stats_rx.add(rowmap.avg());
+
 
 	} else
 	  printf("failed\n");
@@ -215,4 +232,20 @@ int main(int argc, char *argv[]) {
       }    
     }
   }
+
+  printf("\n");
+  
+  // Summary
+  printf("CUSP CSR = %e [s]\n", stats_csr.Min());
+  printf("CUSP HYB = %e [s]\n", stats_hyb.Min());
+
+  double fastest = min(stats_csr.Min(), stats_hyb.Min());
+  
+  printf("Fasted WPK1 (all) = %e [s], %2.2fx faster\n", stats_all.Min(), fastest/stats_all.Min());
+  printf("Fasted WPK1       = %e [s], %2.2fx faster\n", stats_n.Min() , fastest/stats_n.Min());
+  printf("Fasted WPK1_r     = %e [s], %2.2fx faster\n", stats_r.Min() , fastest/stats_r.Min());
+  printf("Fasted WPK1_rx    = %e [s], %2.2fx faster\n", stats_rx.Min(), fastest/stats_rx.Min());
+
+  
+  
 }

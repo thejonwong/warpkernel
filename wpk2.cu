@@ -34,6 +34,7 @@ struct rand_float {
   }
 };
 
+using namespace warpkernel;
 
 int main(int argc, char *argv[]) {
 
@@ -79,34 +80,26 @@ int main(int argc, char *argv[]) {
   // setup multiple run mean accumulators
   // find global minimum and maximum
 
-  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::min>  > wk2all;
-  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::min>  > wk2;
-  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::min>  > wk2no;
-  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::min>  > wk2rex;
-  // int wk2allblock, wk2block, wk2noblock, wk2rexblock;
-  // int wk2allth, wk2th, wk2noth, wk2rexth;
-
   bool lastiter = true;
     // cusp multiplication
     {
 
-
-
-      // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::mean>  > statstime;
       cusp::csr_matrix<IndexType, ValueType, DeviceSpace> A1 = A;
       cusp::array1d<ValueType, DeviceSpace> dx = x;
       cusp::array1d<ValueType, DeviceSpace> dy = y;
 
-      timer cusptimer;
+      profiler csr;
       for (int t = 0; t < ntests; t++) {
+	timer cusptimer;
 	cusp::multiply(A1,dx,dy);
+	ValueType measuredtime = cusptimer.seconds_elapsed();
+	csr.add(measuredtime);
       }		
-      ValueType measuredtime = cusptimer.seconds_elapsed()/ntests;
+
       y = dy;
 	
       if (lastiter) {
-	// std::cout << "cusp gpu time " 
-	// 	  << std::scientific << boost::accumulators::mean(statstime) << std::endl;
+	printf("CUSP CSR avg time (%d runs) = %3.3e [s]\n", csr.count, csr.avg());
       }
     }
 
@@ -118,18 +111,18 @@ int main(int argc, char *argv[]) {
       cusp::array1d<ValueType, DeviceSpace> dx = x;
       cusp::array1d<ValueType, DeviceSpace> dy = y;
 
+      profiler hyb;
       for (int t = 0; t < ntests; t++) {
 	timer cusptimer;
 	cusp::multiply(A1,dx,dy);
 	ValueType measuredtime = cusptimer.seconds_elapsed();
+	hyb.add(measuredtime);
       }
 
       y = dy;
 
       if (lastiter) {
-	// std::cout << "cusp-hyb gpu time " 
-	// 	  << std::scientific << boost::accumulators::mean(statstime) << std::endl;
-	// warpkernel::addData(datafile, "cusp-hyb", boost::accumulators::mean(statstime), -1, -1, -1, -1);
+	printf("CUSP HYB avg time (%d runs) = %3.3e [s]\n", hyb.count, hyb.avg());
       }
     }
 
@@ -168,7 +161,7 @@ int main(int argc, char *argv[]) {
 						     &(A.values[0]),
 						     &(A.column_indices[0]));
 
-	for(int warps_per_block = 2; warps_per_block <= 8; warps_per_block ++) {
+	for(int warps_per_block = 2; warps_per_block <= 16; warps_per_block ++) {
 	  uint nblocks = (kernel2.nwarps + warps_per_block -1)/warps_per_block;
 	  uint blocksize = warps_per_block * WARP_SIZE;    
 
@@ -180,38 +173,21 @@ int main(int argc, char *argv[]) {
 
 	  // normal kernel
 	  {
-	    cusp::array1d<ValueType, DeviceSpace> dy(N,0.);  
-	  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::mean>  > statstime;
-	  ValueType totaltime = 0;
+	    cusp::array1d<ValueType, DeviceSpace> dy(N,0.);
+	    profiler norm;
+
 	  for (int t = 0; t < ntests; t++) {
 	    ValueType measuretime = eng.run<true>(nblocks, blocksize,
 						  thrust::raw_pointer_cast(&dx[0]),
 						  thrust::raw_pointer_cast(&dy[0]));
 	    cudaUnbindTexture(x_tex);
-	    totaltime += measuretime;
+	    norm.add(measuretime);
 	  }
 	  // statstime(totaltime/ntests);
 	    cusp::array1d<ValueType, CPUSpace> ycheck = dy;
 	    if (eng.verify(y,ycheck)) {
-	      std::cout << "Passed" << std::endl;
-	      // std::cout << "warpkernel2 (" << nblocks << "," << blocksize << "," << threshold << ") time = " 
-	      // 		<< std::scientific << boost::accumulators::mean(statstime) << std::endl;
-	      std::stringstream kernelname;
-	      kernelname << "warpkernel2_" << threshold;
-	      // warpkernel::addData(datafile, (char *) (kernelname.str()).c_str(), 
-	      // 			  boost::accumulators::mean(statstime), 
-	      // 			  kernel2, blocksize);
-
-	      // wk2all(boost::accumulators::mean(statstime));
-	      // wk2(boost::accumulators::mean(statstime));
-	      // if (boost::accumulators::min(wk2all) == boost::accumulators::mean(statstime)) {
-	      // 	wk2allblock = blocksize;
-	      // 	wk2allth = threshold;
-	      // }
-	      // if (boost::accumulators::min(wk2) == boost::accumulators::mean(statstime)) {
-	      // 	wk2block = blocksize;
-	      // 	wk2th = threshold;
-	      // }
+	      printf("WPK2 avg time (%d runs) = %e (warps/block = %d, threshold = %d)\n",
+		     norm.count, norm.avg(), warps_per_block, threshold);
 	    }
 	    else {
 	      printf("Failed\n");
@@ -223,37 +199,18 @@ int main(int argc, char *argv[]) {
 	  {
 	    cusp::array1d<ValueType, DeviceSpace> dy(N,0);  
 	    eng.device_colinds = reorder_cols;
-	  // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::mean>  > statstime;
-	  ValueType totaltime = 0;
+	    profiler reordered;
 	  for (int t = 0; t < ntests; t++) {
 	    ValueType measuretime = eng.run<true>(nblocks, blocksize,
 						  thrust::raw_pointer_cast(&dreordered_x[0]),
 						  thrust::raw_pointer_cast(&dy[0]));
 	    cudaUnbindTexture(x_tex);
-	    totaltime += measuretime;
+	    reordered.add(measuretime);
 	  }
-	  // statstime(totaltime/ntests);
 	    cusp::array1d<ValueType, CPUSpace> ycheck = dy;
 	    if (eng.verify(y,ycheck) && lastiter) {
-	    //   std::cout << "warpkernel2 reorder (" << nblocks << "," << blocksize << "," << threshold << ") time = " 
-	    // 		<< std::scientific << boost::accumulators::mean(statstime) << std::endl;
-
-	      std::stringstream kernelname;
-	      kernelname << "warpkernel2_" << threshold << "rex";
-	    //   warpkernel::addData(datafile, (char *) (kernelname.str()).c_str(), 
-	    // 			  boost::accumulators::mean(statstime), 
-	    // 			  kernel2, blocksize);
-
-	    //   wk2all(boost::accumulators::mean(statstime));
-	    // wk2rex(boost::accumulators::mean(statstime));
-	    // if (boost::accumulators::min(wk2all) == boost::accumulators::mean(statstime)) {
-	    //   wk2allblock = blocksize;
-	    //   wk2allth = threshold;
-	    // }
-	    // if (boost::accumulators::min(wk2rex) == boost::accumulators::mean(statstime)) {
-	    //   wk2rexblock = blocksize;
-	    //   wk2rexth = threshold;
-	    // }
+	      printf("WPK2_rx avg time (%d runs) = %e (warps/block = %d, threshold = %d)\n",
+		     reordered.count, reordered.avg(), warps_per_block, threshold);
 
 	    } //else exit(1);
 	    eng.device_colinds = restore_col;
@@ -275,37 +232,21 @@ int main(int argc, char *argv[]) {
 	  {
 	    cusp::array1d<ValueType, DeviceSpace> dy(N,0);  
 	    eng.device_colinds = reorder_cols;
-	    // boost::accumulators::accumulator_set<ValueType, boost::accumulators::stats<boost::accumulators::tag::mean>  > statstime;
-	    ValueType totaltime = 0;
-	  for (int t = 0; t < ntests; t++) {
-	    ValueType measuretime = eng.run_x<true>(nblocks, blocksize,
-						    thrust::raw_pointer_cast(&dreordered_x[0]),
-						    thrust::raw_pointer_cast(&dy[0]));
-	    cudaUnbindTexture(x_tex);
-	    totaltime += measuretime;
-	  }
-	  // statstime(totaltime/ntests);
+	    profiler timer;
+	    
+	    for (int t = 0; t < ntests; t++) {
+	      ValueType measuretime = eng.run_x<true>(nblocks, blocksize,
+						      thrust::raw_pointer_cast(&dreordered_x[0]),
+						      thrust::raw_pointer_cast(&dy[0]));
+	      timer.add(measuretime);
+	      cudaUnbindTexture(x_tex);
+	    }
+
 	    cusp::array1d<ValueType, CPUSpace> ycheck = dy;
 	    if (eng.verify_x(y,ycheck) && lastiter) {
-	      // std::cout << "warpkernel2 reorder w/o rowmap (" << nblocks << "," << blocksize << "," << threshold << ") time = " 
-	      // 		<< std::scientific << boost::accumulators::mean(statstime) << std::endl;
+	      printf("WPK2_r avg time (%d runs) = %e (warps/block = %d, threshold = %d)\n",
+		     timer.count, timer.avg(), warps_per_block, threshold);
 
-	      std::stringstream kernelname;
-	      kernelname << "warpkernel2_" << threshold << "no";
-	      // warpkernel::addData(datafile, (char *) (kernelname.str()).c_str(), 
-	      // 			  boost::accumulators::mean(statstime), 
-	      // 			  kernel2, blocksize);
-
-	    //   wk2all(boost::accumulators::mean(statstime));
-	    // wk2no(boost::accumulators::mean(statstime));
-	    // if (boost::accumulators::min(wk2all) == boost::accumulators::mean(statstime)) {
-	    //   wk2allblock = blocksize;
-	    //   wk2allth = threshold;
-	    // }
-	    // if (boost::accumulators::min(wk2no) == boost::accumulators::mean(statstime)) {
-	    //   wk2noblock = blocksize;
-	    //   wk2noth = threshold;
-	    // }
 	    }// else exit(1);
 	    eng.device_colinds = restore_col;
 

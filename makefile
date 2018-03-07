@@ -1,6 +1,6 @@
 NVCC = nvcc
 
-FLAGS =  -arch=sm_30  -g -G 
+FLAGS =  -arch=sm_30  -O3
 LIB = -lm -L/usr/local/cuda/lib64 -lcusparse
 CUSP_DIR = ../cusp
 

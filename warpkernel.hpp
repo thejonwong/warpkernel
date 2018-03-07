@@ -17,6 +17,7 @@
 // General
 #include <fstream>
 #include <algorithm>
+#include <limits>
 
 // Cusp includes
 #include <cusp/csr_matrix.h>
@@ -978,6 +979,30 @@ namespace warpkernel
       return sum/(1.*count);
     }
 
+  };
+
+  class stats {
+  public:
+    stats() : min_(std::numeric_limits<double>::max()), max_(0.)
+    {}
+
+    void add(double val) {
+      min_ = min(val,min_);
+      max_ = max(val,max_);
+    }
+
+    double Min() {
+      return min_;
+    }
+
+    double Max() {
+      return max_;
+    }
+    
+  protected:
+    double min_;
+    double max_;
+	
   };
 
 }
