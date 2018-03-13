@@ -48,6 +48,7 @@ int main(int argc, char *argv[]) {
   cusp::csr_matrix<IndexType, ValueType, CPUSpace> A = B;
 
   uint N = A.num_cols;
+  uint M = A.num_rows;
   uint nz = A.num_entries;
 
   // open up data file
@@ -93,32 +94,32 @@ int main(int argc, char *argv[]) {
   }
 
   // cusp-hyb
-  {
-    profiler hyb;
-    cusp::hyb_matrix<IndexType, ValueType, DeviceSpace> A1 = A;
-    cusp::array1d<ValueType, DeviceSpace> dx = x;
-    cusp::array1d<ValueType, DeviceSpace> dy = y;
+  // {
+  //   profiler hyb;
+  //   cusp::hyb_matrix<IndexType, ValueType, DeviceSpace> A1 = A;
+  //   cusp::array1d<ValueType, DeviceSpace> dx = x;
+  //   cusp::array1d<ValueType, DeviceSpace> dy = y;
 
-    for (int t = 0; t < ntests; t++) {
-      timer cusptimer;
-      cusp::multiply(A1,dx,dy);
-      ValueType measuredtime = cusptimer.seconds_elapsed();
-      hyb.add(measuredtime);
-    }
+  //   for (int t = 0; t < ntests; t++) {
+  //     timer cusptimer;
+  //     cusp::multiply(A1,dx,dy);
+  //     ValueType measuredtime = cusptimer.seconds_elapsed();
+  //     hyb.add(measuredtime);
+  //   }
 
-    y = dy;
+  //   y = dy;
 
-    if (lastiter) {
-      printf("CUSP HYB avg time (%d runs) = %3.3e [s]\n", hyb.count, hyb.avg());
-      stats_hyb.add(hyb.avg(), "HYB");
-    }
-  }
+  //   if (lastiter) {
+  //     printf("CUSP HYB avg time (%d runs) = %3.3e [s]\n", hyb.count, hyb.avg());
+  //     stats_hyb.add(hyb.avg(), "HYB");
+  //   }
+  // }
 
   // warp kernel tests
   {
     cusp::array1d<ValueType, DeviceSpace> dx = x;
     warpkernel::structure kernel1;
-    kernel1.scan(nz, N, A);
+    kernel1.scan(nz, M, A);
 
     cusp::array1d<IndexType, CPUSpace> reorder_cols = A.column_indices;
     kernel1.reorder_columns_coalesced(reorder_cols);

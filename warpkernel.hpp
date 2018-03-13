@@ -12,7 +12,7 @@
 #ifndef WARP_KERNEL_HPP
 #define WARP_KERNEL_HPP
 
-#define NDEBUG 
+//#define NDEBUG 
 
 // General
 #include <fstream>
@@ -933,8 +933,8 @@ namespace warpkernel
     bool verify(R orig, R comp) {
       bool check = true;
       for (int i=0; i< (*kernel).nrows; i++) {
-	if ((abs(orig[i]) == 0 && comp[i]!=0) || abs((orig[i]-comp[i])/orig[i]) > 1E-5) {
-	  std::cout << orig[i] << "\t" << comp[i] << "\t" << i << std::endl;
+	if ((abs(orig[i]) <= 1E-14 && abs(orig[i]-comp[i])>1e-14) || (abs((orig[i]-comp[i])/orig[i]) > 1E-5 && abs(orig[i])>1E-14)) {
+	  std::cout << "verify: " << orig[i] << "\t" << comp[i] << "\t" << i << " " << abs((orig[i]-comp[i])/orig[i]) <<  std::endl;
 	  check= false;
 	  return check;
 	}
@@ -946,9 +946,9 @@ namespace warpkernel
     bool verify_x(R orig, R comp) {
       bool check = true;
       for (int i=0; i< (*kernel).nrows; i++) {
-	if ((abs(orig[(*kernel).row_map[i]]) == 0 && comp[i]!=0) 
-	    || abs((orig[(*kernel).row_map[i]]-comp[i])/orig[(*kernel).row_map[i]]) > 1E-5) {
-	  std::cout << orig[(*kernel).row_map[i]] << "\t" << comp[i] << "\t" << i << std::endl;
+	if ((abs(orig[(*kernel).row_map[i]]) <= 1E-14 && abs(orig[i]-comp[i])>1e-14) 
+	    || (abs((orig[(*kernel).row_map[i]]-comp[i])/orig[(*kernel).row_map[i]]) > 1E-5 && abs(orig[i])>1E-14)) {
+	  std::cout << "verify_x: " << orig[(*kernel).row_map[i]] << "\t" << comp[i] << "\t" << i << std::endl;
 	  check = false;
 	  return check;
 	}
