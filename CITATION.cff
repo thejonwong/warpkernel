@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use WarpKernel in your research, please cite our paper."
+title: "WarpKernel"
+authors:
+  - family-names: "Wong"
+    given-names: "Jonathan"
+  - family-names: "Kuhl"
+    given-names: "Ellen"
+  - family-names: "Darve"
+    given-names: "Eric"
+doi: "10.1002/nme.4865"
+url: "https://github.com/thejonwong/warpkernel"
+preferred-citation:
+  type: article
+  authors:
+    - family-names: "Wong"
+      given-names: "Jonathan"
+    - family-names: "Kuhl"
+      given-names: "Ellen"
+    - family-names: "Darve"
+      given-names: "Eric"
+  title: "A new sparse matrix vector multiplication graphics processing unit algorithm designed for finite element problems"
+  journal: "International Journal for Numerical Methods in Engineering"
+  volume: "102"
+  issue: "12"
+  pages: "1784-1814"
+  year: 2015
+  doi: "10.1002/nme.4865"
